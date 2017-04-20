@@ -1,47 +1,52 @@
 /*-----------------------------------------------------------------------------
-Author:		    Josh Kent
+Author:		Josh Kent
+
+Course-Section:	CS360
+
+Assignment:	Program #4
 
 Collaborators:	James Jerkins | exitKey()
 
-Resources:  	https://linux.die.net/man/2/send
-                https://linux.die.net/man/3/recv
-                https://linux.die.net/man/2/select
-                https://linux.die.net/man/2/fcntl
-                https://linux.die.net/man/3/fread
-                https://linux.die.net/man/7/signal
-                https://linux.die.net/man/3/strtok
-                https://linux.die.net/man/3/strcpy
-                https://linux.die.net/man/3/strcmp
-                https://linux.die.net/man/1/gdb
+Resources:	https://linux.die.net/man/2/send
+		https://linux.die.net/man/3/recv
+		https://linux.die.net/man/2/select
+		https://linux.die.net/man/2/fcntl
+		https://linux.die.net/man/3/fread
+		https://linux.die.net/man/7/signal
+		https://linux.die.net/man/3/strtok
+		https://linux.die.net/man/3/strcpy
+		https://linux.die.net/man/3/strcmp
+		https://linux.die.net/man/1/gdb
 
 Description: 	A webserver that implements HTTTP 0.9 protocol. It supports
-                html, css, js, and png files. This implementation sends a
-                header to be compatible with HTTP 1.x., and it does not
-                support folder indexing. The web server ignores ^C to close.
-                To close the server, the user must press "ENTER".
+		html, css, js, and png files. This implementation sends a
+		header to be compatible with HTTP 1.x., and it does not
+		support folder indexing. The web server ignores ^C to close.
+		To close the server, the user must press "ENTER".
 
-Testing:	    This implementation has only been tested in chrome.
+Testing:	This implementation has only been tested in chrome.
 
-Arguments:	    Server requires a single argument for the file path in which
-                pages will be served. The error pages are in the local
-                file path with the executable.
+Arguments:	Server requires a single argument for the file path in which
+		pages will be served. The error pages are in the local
+		file path with the executable. (ex. /home/usr/web/)
 -----------------------------------------------------------------------------*/
 
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <stdlib.h>	    /*For malloc(), exit(), and free()*/
-#include <unistd.h>	    /*For close*/
-#include <string.h>	    /*For srtlcpy(), strlcat(), bzero(), strtok(),
-                            strlen(), and strlen()*/
-#include <signal.h>	    /*Needed to ignore ^C*/
-#include <fcntl.h>	    /*Needed to make input non-blocking*/
+#include <stdlib.h>	/*For malloc(), exit(), and free()*/
+#include <unistd.h>	/*For close*/
+#include <string.h>	/*For srtlcpy(), strlcat(), bzero(), strtok(),
+				strlen(), and strlen()*/
+#include <signal.h>	/*Needed to ignore ^C*/
+#include <fcntl.h>	/*Needed to make input non-blocking*/
 #include <sys/time.h>	/*Needed for select*/
-#include <ctype.h>	    /*For tolower()*/
+#include <ctype.h>	/*For tolower()*/
+#include <sys/stat.h>	/*For fstat()*/
 
 
-#define SERVER_PORT 5417
+#define SERVER_PORT 5416
 #define MAX_LINE 65536
 #define MAX_PENDING 5
 #define MAX_HEADER_LINE 80
@@ -161,8 +166,6 @@ int main(int argc, char *argv[])
 
 			/*Get HTTP request type and set it to lowercase*/
 			request = strtok (buf, " ");
-			for(i = 0; i < strlen(request); i++)
-				request[i] = tolower(request[i]);
 
 			/*Get file name, directory and file type*/
 			strlcpy(directory, argv[1], sizeof(directory));
@@ -178,7 +181,7 @@ int main(int argc, char *argv[])
 			}
 
 			/*Check for GET Request*/
-			if(strcmp(request, "get") == 0){
+			if(strcmp(request, "get") == 0 || strcmp(request, "GET") == 0){
 
 				/*Check for index file*/
 				if(strcmp(fileName, "/") == 0 || strcmp(fileName, "HTTP")==0)
@@ -204,6 +207,8 @@ int main(int argc, char *argv[])
 				fd = fopen(FILE_501, "r");
 				served = fhandler(new_s, fd, buff, header, ftype, 4);
 			}
+
+			totalServed = totalServed + served;
 		}/*End if(retval > 0)*/
 
 		/*Check if ENTER was pressed*/
@@ -213,8 +218,6 @@ int main(int argc, char *argv[])
 			close(new_s);
 			close(s);
 		}
-
-		totalServed = totalServed + served;
 	}/*End while*/
 
 	/*Print the total megabytes the server handled while up*/
@@ -235,11 +238,11 @@ Author: 	Josh Kent
 Purpose:	Handle requests and file types
 
 Input:		new_s - file descriptor containing the socker
-            fd - File descriptor of file needing to be read
-            buff - Buffer for the file contents to read into
-            header - Struct for containing the HTTP header
-            ftype - The file type (i.e. .html, .png, .css, etc.)
-            sc - The status code for the proper response type
+		fd - File descriptor of file needing to be read
+		buff - Buffer for the file contents to read into
+		header - Struct for containing the HTTP header
+		ftype - The file type (i.e. .html, .png, .css, etc.)
+		sc - The status code for the proper response type
 
 Return:		An integer containing the size of the file
 */
@@ -247,6 +250,8 @@ int fhandler(int new_s, FILE *fd, char *buff, struct httpHeader *header,
 		char *ftype, int sc)
 {
 	int fileSize;
+	struct stat st;
+	int fp;
 	char *statusCode[5] =
 	{
 		"200 OK",
@@ -264,9 +269,9 @@ int fhandler(int new_s, FILE *fd, char *buff, struct httpHeader *header,
 	};
 
 	/*Get file size and read file into buffer*/
-	fseek(fd, 0, SEEK_END);
-	fileSize = ftell(fd);
-	fseek(fd, SEEK_SET, 0);
+	fp = fileno(fd);	/*Get file descriptor for fstat()*/
+	fstat(fp, &st);
+	fileSize = st.st_size;
 	int r;
 	bzero(buff, sizeof(buff));
 	r = fread(buff, 1, fileSize, fd);
@@ -325,11 +330,11 @@ void sigintIgnore()
 
 /*
 *********************************************************************
-Author:		    James Jerkins
+Author:		James Jerkins
 Modified_By:	Josh Kent
-Purpose:	    Check stdin if the user presses enter
-Return:		    -1(true) if enter was pressed by the user
-                -0(false) if enter was not detected in stdin
+Purpose:	Check stdin if the user presses enter
+Return:		-1(true) if enter was pressed by the user
+		-0(false) if enter was not detected in stdin
 */
 int exitKey()
 {
