@@ -164,7 +164,7 @@ int main(int argc, char *argv[])
 			recv(new_s, buf, sizeof(buf), 0);
 			memcpy(temp, buf, sizeof(temp));
 
-			/*Get HTTP request type and set it to lowercase*/
+			/*Get HTTP request type*/
 			request = strtok (buf, " ");
 
 			/*Get file name, directory and file type*/
